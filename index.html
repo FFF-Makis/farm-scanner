@@ -99,6 +99,8 @@
   .code-kind{font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-bottom:4px;}
   .code-label{font-size:19px; font-weight:700; margin-bottom:2px; word-break:break-word;}
   .code-sub{font-size:13px; color:var(--muted); margin-bottom:14px;}
+  .code-extra{font-size:13px; color:var(--text); background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:8px 10px; margin:-6px 0 14px; line-height:1.5;}
+  .code-extra[hidden]{display:none!important;}
 
   /* Toast */
   .toast{
@@ -145,8 +147,9 @@
 <div class="app">
 
   <div class="topbar">
-    <div class="brand"><span class="dot"></span> Farm Scanner</div>
+    <div class="brand"><span class="dot"></span> Farm Scanner <span id="build-tag" style="font-weight:400;color:var(--muted);font-size:11px;"></span></div>
     <div class="pillrow">
+      <button class="pill" id="btn-settings" title="Settings">⚙</button>
       <button class="pill" id="btn-open-log" title="View log">📋 <span id="pending-count">0</span> to send</button>
     </div>
   </div>
@@ -223,6 +226,7 @@
       <div class="code-kind" id="found-kind">Code</div>
       <div class="code-label" id="found-label">—</div>
       <div class="code-sub" id="found-sub"></div>
+      <div class="code-extra" id="found-extra" hidden></div>
       <div class="btn-grid">
         <button class="btn primary" id="btn-remember">Remember</button>
         <button class="btn secondary" id="btn-discard">Discard</button>
@@ -261,6 +265,94 @@
   }
   function saveState(){
     try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){ /* storage unavailable; continue in-memory */ }
+  }
+
+  // Build tag shown in the top bar -- bump this on every deploy so a
+  // stale cached copy (GitHub Pages CDN, service worker, or the
+  // browser's own cache) is obvious at a glance instead of silently
+  // looking like a bug.
+  var APP_BUILD = "b4-2026-09-24";
+
+  // ---------------------------------------------------------------
+  // Live asset info (optional): the workbook can export a small JSON
+  // snapshot (Batch/Rack/Room -> current room, status, etc.) to the
+  // same synced folder used for the CSV export. If the user points
+  // this app at a fetchable URL for that file (Settings), a scanned
+  // code's current details show right in the found-code prompt --
+  // this is how "which room is this rack in" comes back without
+  // baking a mutable fact into the permanent QR sticker.
+  // ---------------------------------------------------------------
+  var DATA_URL_KEY = "farmScanner.dataUrl";
+  var assetInfoCache = null;
+  var assetInfoFetchedAt = 0;
+
+  function getDataUrl(){
+    try{ return localStorage.getItem(DATA_URL_KEY) || ""; }catch(e){ return ""; }
+  }
+  function setDataUrl(url){
+    try{ localStorage.setItem(DATA_URL_KEY, url); }catch(e){ /* ignore */ }
+  }
+
+  // A plain OneDrive "anyone with the link" share link (onedrive.live.com
+  // or 1drv.ms) serves an HTML preview page, not the file itself, when
+  // fetched programmatically. Microsoft's documented workaround is the
+  // anonymous shares API: base64url-encode the share link and ask that
+  // endpoint for /root/content instead -- no sign-in needed. This lets
+  // the user paste the ordinary link straight from OneDrive's "Copy
+  // link" button rather than construct anything by hand.
+  function toDirectFetchUrl(url){
+    if(/^https?:\/\/(1drv\.ms|onedrive\.live\.com)\//i.test(url)){
+      var b64 = btoa(unescape(encodeURIComponent(url)))
+        .replace(/\//g, "_").replace(/\+/g, "-").replace(/=+$/, "");
+      return "https://api.onedrive.com/v1.0/shares/u!" + b64 + "/root/content";
+    }
+    return url;
+  }
+
+  function fetchAssetInfo(){
+    var configured = getDataUrl();
+    if(!configured) return Promise.resolve(null);
+    var url = toDirectFetchUrl(configured);
+    // Reuse anything fetched in the last 60s instead of hitting the
+    // network on every single scan.
+    if(assetInfoCache && (Date.now() - assetInfoFetchedAt) < 60000){
+      return Promise.resolve(assetInfoCache);
+    }
+    var controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    var timer = controller ? setTimeout(function(){ controller.abort(); }, 5000) : null;
+    return fetch(url, { cache:"no-store", signal: controller ? controller.signal : undefined })
+      .then(function(res){ if(!res.ok) throw new Error("bad status"); return res.json(); })
+      .then(function(data){
+        assetInfoCache = data;
+        assetInfoFetchedAt = Date.now();
+        return data;
+      })
+      .catch(function(){ return null; })
+      .finally(function(){ if(timer) clearTimeout(timer); });
+  }
+
+  function lookupAssetInfo(data, parsed){
+    if(!data) return null;
+    if(parsed.type === "rack" && data.racks) return data.racks[parsed.rackId] || null;
+    if(parsed.type === "room" && data.rooms) return data.rooms[parsed.roomId] || null;
+    if(parsed.type === "unit" && data.units) return data.units[parsed.batchId + "|" + parsed.unitNum] || null;
+    return null;
+  }
+
+  function formatAssetInfo(parsed, info){
+    if(!info) return "";
+    var lines = [];
+    if(parsed.type === "rack"){
+      lines.push("Currently in: " + (info.room || "no room assigned yet"));
+      if(info.unitsOnRack != null) lines.push(info.unitsOnRack + " unit(s) on this rack");
+    } else if(parsed.type === "room"){
+      if(info.rackCount != null) lines.push(info.rackCount + " rack(s) in this room");
+    } else if(parsed.type === "unit"){
+      if(info.status) lines.push("Status: " + info.status);
+      if(info.rack) lines.push("Rack: " + info.rack + (info.room ? " (" + info.room + ")" : ""));
+      if(info.remaining) lines.push("Remaining: " + info.remaining);
+    }
+    return lines.join(" · ");
   }
 
   // ---------------------------------------------------------------
@@ -422,6 +514,22 @@
     var modal = document.getElementById("modal-found");
     modal.hidden = false;
     modal.dataset.pending = JSON.stringify(parsed);
+
+    var extraEl = document.getElementById("found-extra");
+    extraEl.hidden = true;
+    extraEl.textContent = "";
+    if(parsed.type !== "unknown" && getDataUrl()){
+      var forRaw = raw; // guard against a slower fetch resolving after a newer scan opened
+      fetchAssetInfo().then(function(data){
+        if(modal.hidden || modal.dataset.pending !== JSON.stringify(parsed)) return;
+        var info = lookupAssetInfo(data, parsed);
+        var text = formatAssetInfo(parsed, info);
+        if(text){
+          extraEl.textContent = text;
+          extraEl.hidden = false;
+        }
+      });
+    }
   }
 
   // ---------------------------------------------------------------
@@ -815,8 +923,27 @@
   }
 
   // ---------------------------------------------------------------
+  // Settings (data URL for live asset info)
+  // ---------------------------------------------------------------
+  document.getElementById("btn-settings").addEventListener("click", function(){
+    var current = getDataUrl();
+    var next = window.prompt(
+      "Paste the fetchable link to the workbook's asset-info.json export " +
+      "(from OneDrive/Drive/Dropbox's \"anyone with the link\" share option), " +
+      "or clear it to turn this off:",
+      current
+    );
+    if(next === null) return; // cancelled
+    next = next.trim();
+    setDataUrl(next);
+    assetInfoCache = null;
+    showToast(next ? "Saved -- scans will show live details" : "Cleared -- live details off");
+  });
+
+  // ---------------------------------------------------------------
   // Init
   // ---------------------------------------------------------------
+  document.getElementById("build-tag").textContent = APP_BUILD;
   renderMemoryStrip();
   updatePendingCount();
   startCamera();
