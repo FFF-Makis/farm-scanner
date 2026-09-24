@@ -271,7 +271,7 @@
   // stale cached copy (GitHub Pages CDN, service worker, or the
   // browser's own cache) is obvious at a glance instead of silently
   // looking like a bug.
-  var APP_BUILD = "b5-2026-09-24";
+  var APP_BUILD = "b6-2026-09-24";
 
   // ---------------------------------------------------------------
   // Live asset info (optional): the workbook can export a small JSON
@@ -300,7 +300,16 @@
   // endpoint for /root/content instead -- no sign-in needed. This lets
   // the user paste the ordinary link straight from OneDrive's "Copy
   // link" button rather than construct anything by hand.
+  var lastAssetError = "";
+
   function toDirectFetchUrl(url){
+    if(/\.sharepoint\.com\//i.test(url)){
+      // Work/school OneDrive (SharePoint-backed) links use a completely
+      // different, auth-required API. The anonymous trick below only
+      // works for personal Microsoft accounts, so don't even try --
+      // fail with a clear reason instead of a cryptic network error.
+      return null;
+    }
     if(/^https?:\/\/(1drv\.ms|onedrive\.live\.com)\//i.test(url)){
       var b64 = btoa(unescape(encodeURIComponent(url)))
         .replace(/\//g, "_").replace(/\+/g, "-").replace(/=+$/, "");
@@ -313,6 +322,12 @@
     var configured = getDataUrl();
     if(!configured) return Promise.resolve(null);
     var url = toDirectFetchUrl(configured);
+    if(url === null){
+      lastAssetError = "This looks like a work/school OneDrive (SharePoint) link. " +
+        "The method this app uses only works with a personal Microsoft account's " +
+        "share link (starting with 1drv.ms or onedrive.live.com).";
+      return Promise.resolve(null);
+    }
     // Reuse anything fetched in the last 60s instead of hitting the
     // network on every single scan.
     if(assetInfoCache && (Date.now() - assetInfoFetchedAt) < 60000){
@@ -321,13 +336,31 @@
     var controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
     var timer = controller ? setTimeout(function(){ controller.abort(); }, 5000) : null;
     return fetch(url, { cache:"no-store", signal: controller ? controller.signal : undefined })
-      .then(function(res){ if(!res.ok) throw new Error("bad status"); return res.json(); })
+      .then(function(res){
+        if(!res.ok){ throw new Error("Server replied with an error (HTTP " + res.status + ")"); }
+        return res.text();
+      })
+      .then(function(text){
+        try{
+          return JSON.parse(text);
+        }catch(parseErr){
+          throw new Error("Got a response back, but it wasn't JSON -- " +
+            "likely the link opens a preview/login page instead of the raw file. " +
+            "(first bit: \"" + text.slice(0,60).replace(/\s+/g," ") + "\")");
+        }
+      })
       .then(function(data){
         assetInfoCache = data;
         assetInfoFetchedAt = Date.now();
+        lastAssetError = "";
         return data;
       })
-      .catch(function(){ return null; })
+      .catch(function(err){
+        lastAssetError = (err && err.name === "AbortError")
+          ? "The request timed out after 5 seconds."
+          : ((err && err.message) || "Couldn't reach that link (network error or blocked request).");
+        return null;
+      })
       .finally(function(){ if(timer) clearTimeout(timer); });
   }
 
@@ -965,7 +998,22 @@
     next = next.trim();
     setDataUrl(next);
     assetInfoCache = null;
-    showToast(next ? "Saved -- scans will show live details" : "Cleared -- live details off");
+    assetInfoFetchedAt = 0;
+    if(!next){ showToast("Cleared -- live details off"); return; }
+    showToast("Saved -- testing the link...");
+    fetchAssetInfo().then(function(data){
+      if(data){
+        var racks = data.racks ? Object.keys(data.racks).length : 0;
+        var rooms = data.rooms ? Object.keys(data.rooms).length : 0;
+        var units = data.units ? Object.keys(data.units).length : 0;
+        window.alert("It works! Loaded " + racks + " rack(s), " + rooms + " room(s), " +
+          units + " unit(s).\nGenerated at: " + (data.generatedAt || "unknown"));
+      } else {
+        window.alert("Couldn't load live info:\n\n" + (lastAssetError || "Unknown error") +
+          "\n\nYou can still use the app without this -- it only affects the extra " +
+          "details shown after a scan.");
+      }
+    });
   });
 
   // ---------------------------------------------------------------
