@@ -1,0 +1,15 @@
+{
+  "name": "Farm Scanner",
+  "short_name": "FarmScan",
+  "description": "Scan QR codes on jars, bags, racks and rooms; log actions to sync into the farm spreadsheet.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0e1713",
+  "theme_color": "#10201a",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
