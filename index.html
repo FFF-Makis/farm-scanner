@@ -266,18 +266,21 @@
   // ---------------------------------------------------------------
   // QR code classification -- matches the workbook's own QR Code
   // Text formulas exactly:
-  //   Rack:  "<RackID> | <RackID> | <RoomName>"        (3 segments on " | ")
+  //   Rack:  "RACK:<RackID>"                            (a rack's room
+  //          assignment is mutable, so it's deliberately left out of
+  //          the code -- look it up live in the Racks sheet instead)
   //   Room:  "<RoomID> | <RoomName>"                    (2 segments on " | ")
   //   Unit:  "<BatchID>-<UnitNum>|<Species>|<DDMMYYYY>" (bare "|", no spaces)
   // ---------------------------------------------------------------
   function classifyCode(raw){
     raw = (raw || "").trim();
+    if(raw.indexOf("RACK:") === 0){
+      var rackId = raw.slice(5).trim();
+      if(rackId.length === 0) return { type:"unknown", raw:raw, label:"Unrecognized code" };
+      return { type:"rack", raw:raw, rackId:rackId, label:"Rack " + rackId };
+    }
     if(raw.indexOf(" | ") !== -1){
       var parts = raw.split(" | ");
-      if(parts.length === 3){
-        return { type:"rack", raw:raw, rackId:parts[0], roomName:parts[2],
-                 label:"Rack " + parts[0], sub:"in " + parts[2] };
-      }
       if(parts.length === 2){
         return { type:"room", raw:raw, roomId:parts[0], roomName:parts[1],
                  label:"Room " + parts[1], sub:parts[0] };
