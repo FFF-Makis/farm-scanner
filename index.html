@@ -338,8 +338,7 @@
   var mainStream = null;
   var scanLoopHandle = null;
   var scanMode = "main";       // "main" | "dest" | "off"
-  var cooldownUntil = 0;
-  var lastHandledRaw = "";
+  var suppressedCode = "";     // a code already surfaced -- ignored until it leaves view
   var destExpectType = null;   // "rack" | "room"
   var destCallback = null;
 
@@ -365,7 +364,6 @@
       scanLoopHandle = requestAnimationFrame(tick);
       if(scanMode === "off") return;
       if(document.getElementById("modal-found").hidden === false) return; // paused while prompt is up
-      if(Date.now() < cooldownUntil) return;
 
       var v = scanMode === "dest" ? videoDest : videoMain;
       if(!v || v.readyState !== v.HAVE_ENOUGH_DATA) return;
@@ -378,22 +376,34 @@
       try{ imageData = scanCtx.getImageData(0, 0, w, h); }catch(e){ return; }
 
       var result = (typeof jsQR === "function") ? jsQR(imageData.data, w, h, { inversionAttempts:"dontInvert" }) : null;
-      if(result && result.data){
-        handleDetected(result.data);
+      var raw = (result && result.data) ? result.data : "";
+
+      if(raw === ""){
+        // Nothing decoded this frame -- whatever was in view has moved out,
+        // so it's fair game to trigger again if it comes back.
+        suppressedCode = "";
+        return;
       }
+      if(raw === suppressedCode){
+        // Same physical code still sitting in the frame (phone held steady
+        // on a sticker) -- we've already surfaced it once; don't re-pop
+        // the prompt every frame until it actually moves out of view.
+        return;
+      }
+      handleDetected(raw);
     }
     tick();
   }
 
   function handleDetected(raw){
+    suppressedCode = raw; // don't re-surface this exact code until it leaves the frame
+
     if(scanMode === "dest"){
       var parsed = classifyCode(raw);
       if(parsed.type !== destExpectType){
         showToast("That's a " + parsed.type + " code -- scan a " + destExpectType + " code instead");
-        cooldownUntil = Date.now() + 1200;
         return;
       }
-      cooldownUntil = Date.now() + 1500;
       var cb = destCallback;
       destCallback = null;
       cb(parsed);
@@ -408,7 +418,6 @@
     var modal = document.getElementById("modal-found");
     modal.hidden = false;
     modal.dataset.pending = JSON.stringify(parsed);
-    lastHandledRaw = raw;
   }
 
   // ---------------------------------------------------------------
@@ -443,7 +452,6 @@
   });
   function closeModalAndResume(){
     document.getElementById("modal-found").hidden = true;
-    cooldownUntil = Date.now() + 1200;
     renderMemoryStrip();
   }
 
@@ -495,9 +503,10 @@
   // ---------------------------------------------------------------
   var screens = ["screen-scan","screen-action","screen-dest-scan","screen-input","screen-log"];
   function showScreen(id){
+    document.getElementById("modal-found").hidden = true; // never leave the prompt stranded over a different screen
     screens.forEach(function(s){ document.getElementById(s).hidden = (s !== id); });
-    if(id === "screen-scan"){ scanMode = "main"; }
-    else if(id === "screen-dest-scan"){ scanMode = "dest"; }
+    if(id === "screen-scan"){ scanMode = "main"; suppressedCode = ""; }
+    else if(id === "screen-dest-scan"){ scanMode = "dest"; suppressedCode = ""; }
     else { scanMode = "off"; }
   }
 
