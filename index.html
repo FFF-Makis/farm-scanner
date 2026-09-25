@@ -271,7 +271,7 @@
   // stale cached copy (GitHub Pages CDN, service worker, or the
   // browser's own cache) is obvious at a glance instead of silently
   // looking like a bug.
-  var APP_BUILD = "b6-2026-09-24";
+  var APP_BUILD = "b7-2026-09-24";
 
   // ---------------------------------------------------------------
   // Live asset info (optional): the workbook can export a small JSON
@@ -293,41 +293,18 @@
     try{ localStorage.setItem(DATA_URL_KEY, url); }catch(e){ /* ignore */ }
   }
 
-  // A plain OneDrive "anyone with the link" share link (onedrive.live.com
-  // or 1drv.ms) serves an HTML preview page, not the file itself, when
-  // fetched programmatically. Microsoft's documented workaround is the
-  // anonymous shares API: base64url-encode the share link and ask that
-  // endpoint for /root/content instead -- no sign-in needed. This lets
-  // the user paste the ordinary link straight from OneDrive's "Copy
-  // link" button rather than construct anything by hand.
+  // OneDrive's anonymous share-link API turned out to be locked down
+  // (401 Unauthorized even for a correctly-formed request), so asset-info.json
+  // is no longer fetched from a cloud-storage share link at all. Instead the
+  // workbook macro pushes it straight into the SAME GitHub Pages site that
+  // hosts this app, so it's just a same-origin file fetch here -- no CORS,
+  // no auth, nothing to configure. The Settings prompt below only exists as
+  // an optional override, in case you ever want to point at something else.
   var lastAssetError = "";
-
-  function toDirectFetchUrl(url){
-    if(/\.sharepoint\.com\//i.test(url)){
-      // Work/school OneDrive (SharePoint-backed) links use a completely
-      // different, auth-required API. The anonymous trick below only
-      // works for personal Microsoft accounts, so don't even try --
-      // fail with a clear reason instead of a cryptic network error.
-      return null;
-    }
-    if(/^https?:\/\/(1drv\.ms|onedrive\.live\.com)\//i.test(url)){
-      var b64 = btoa(unescape(encodeURIComponent(url)))
-        .replace(/\//g, "_").replace(/\+/g, "-").replace(/=+$/, "");
-      return "https://api.onedrive.com/v1.0/shares/u!" + b64 + "/root/content";
-    }
-    return url;
-  }
+  var DEFAULT_ASSET_URL = "./asset-info.json";
 
   function fetchAssetInfo(){
-    var configured = getDataUrl();
-    if(!configured) return Promise.resolve(null);
-    var url = toDirectFetchUrl(configured);
-    if(url === null){
-      lastAssetError = "This looks like a work/school OneDrive (SharePoint) link. " +
-        "The method this app uses only works with a personal Microsoft account's " +
-        "share link (starting with 1drv.ms or onedrive.live.com).";
-      return Promise.resolve(null);
-    }
+    var url = getDataUrl() || DEFAULT_ASSET_URL;
     // Reuse anything fetched in the last 60s instead of hitting the
     // network on every single scan.
     if(assetInfoCache && (Date.now() - assetInfoFetchedAt) < 60000){
@@ -989,9 +966,10 @@
   document.getElementById("btn-settings").addEventListener("click", function(){
     var current = getDataUrl();
     var next = window.prompt(
-      "Paste the fetchable link to the workbook's asset-info.json export " +
-      "(from OneDrive/Drive/Dropbox's \"anyone with the link\" share option), " +
-      "or clear it to turn this off:",
+      "Live scan details load automatically from this site's own asset-info.json " +
+      "(the workbook macro publishes it here) -- nothing to set up.\n\n" +
+      "Only paste something here if you want to override that with a different " +
+      "URL. Leave blank / clear it to use the automatic default:",
       current
     );
     if(next === null) return; // cancelled
@@ -999,8 +977,7 @@
     setDataUrl(next);
     assetInfoCache = null;
     assetInfoFetchedAt = 0;
-    if(!next){ showToast("Cleared -- live details off"); return; }
-    showToast("Saved -- testing the link...");
+    showToast(next ? "Saved -- testing the override..." : "Using the automatic default -- testing...");
     fetchAssetInfo().then(function(data){
       if(data){
         var racks = data.racks ? Object.keys(data.racks).length : 0;
