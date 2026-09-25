@@ -236,6 +236,25 @@
     </div>
   </div>
 
+  <!-- "DID IT ACTUALLY SAVE?" MODAL -->
+  <!-- A plain in-page modal instead of window.confirm(): after handing a
+       file to the OS share sheet and coming back (possibly minutes later,
+       possibly after Android reloaded the tab in the background), a
+       browser's native confirm() can be silently suppressed/auto-dismissed
+       once too much time has passed since the last real tap -- this stays
+       up, un-missable, until you actually tap one of its two buttons. -->
+  <div class="modal-backdrop" id="modal-confirm-sent" hidden>
+    <div class="modal-card">
+      <div class="code-kind">Confirm</div>
+      <div class="code-label" id="confirm-sent-label">Did it save?</div>
+      <div class="code-sub" id="confirm-sent-sub"></div>
+      <div class="btn-grid">
+        <button class="btn primary" id="btn-confirm-sent-yes">Yes, it saved</button>
+        <button class="btn secondary" id="btn-confirm-sent-no">No / not sure</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
@@ -271,7 +290,7 @@
   // stale cached copy (GitHub Pages CDN, service worker, or the
   // browser's own cache) is obvious at a glance instead of silently
   // looking like a bug.
-  var APP_BUILD = "b8-2026-09-25";
+  var APP_BUILD = "b9-2026-09-25";
 
   // ---------------------------------------------------------------
   // Live asset info (optional): the workbook can export a small JSON
@@ -304,7 +323,15 @@
   var DEFAULT_ASSET_URL = "./asset-info.json";
 
   function fetchAssetInfo(){
-    var url = getDataUrl() || DEFAULT_ASSET_URL;
+    var custom = getDataUrl();
+    // A OneDrive/SharePoint override left over from before this app gave up
+    // on that approach (it's permanently blocked, see the comment above) is
+    // a dead link, not a real choice you're making now -- auto-ignore it
+    // and use the default rather than silently failing forever because a
+    // leftover setting never got cleared.
+    var isDeadOneDrive = !!custom && /^https?:\/\/(1drv\.ms|onedrive\.live\.com)\//i.test(custom);
+    var isSharePoint = !!custom && /\.sharepoint\.com\//i.test(custom);
+    var url = (custom && !isDeadOneDrive && !isSharePoint) ? custom : DEFAULT_ASSET_URL;
     // Reuse anything fetched in the last 60s instead of hitting the
     // network on every single scan.
     if(assetInfoCache && (Date.now() - assetInfoFetchedAt) < 60000){
@@ -470,6 +497,7 @@
       scanLoopHandle = requestAnimationFrame(tick);
       if(scanMode === "off") return;
       if(document.getElementById("modal-found").hidden === false) return; // paused while prompt is up
+      if(document.getElementById("modal-confirm-sent").hidden === false) return; // paused while the sent-confirmation is up
 
       var v = scanMode === "dest" ? videoDest : videoMain;
       if(!v || v.readyState !== v.HAVE_ENOUGH_DATA) return;
@@ -878,13 +906,21 @@
 
   // Handing a file to navigator.share() backgrounds this tab while the user
   // picks a destination in the OS share sheet (e.g. browsing OneDrive
-  // folders). On Android that hand-off can take long enough that Chrome
-  // discards/reloads the tab in the background to save memory -- when that
-  // happens, ANY in-flight JS (including a .then() waiting to ask "did it
-  // save?") is simply gone; a plain in-memory callback can never survive
-  // that. Persisting the pending confirmation to localStorage *before*
-  // calling share() means it survives a reload: resumePendingConfirmIfAny()
-  // (called on every app start) picks it back up and asks then instead.
+  // folders). Two separate things can go wrong with trying to ask "did it
+  // save?" right after that:
+  //   1. On Android that hand-off can take long enough that Chrome
+  //      discards/reloads the tab in the background to save memory -- any
+  //      in-flight JS (a .then() waiting to ask) is simply gone.
+  //   2. Even if the tab survives, a browser's native window.confirm()
+  //      can be silently suppressed/auto-dismissed once too much time has
+  //      passed since your last actual tap on the page -- it can return
+  //      "cancelled" with no dialog ever appearing on screen.
+  // Both are solved the same way: persist the pending question to
+  // localStorage *before* calling share(), and answer it with a plain
+  // in-page modal (#modal-confirm-sent) rather than window.confirm(). The
+  // record is only cleared once you actually tap Yes/No on that modal, so
+  // it reliably reappears -- on return from the share sheet, or on the
+  // next app open if the tab got reloaded -- until it's actually answered.
   var PENDING_CONFIRM_KEY = "farmScanner.pendingConfirm";
   function savePendingConfirm(ids, filename){
     try{ localStorage.setItem(PENDING_CONFIRM_KEY, JSON.stringify({ ids:ids, filename:filename })); }catch(e){}
@@ -893,31 +929,36 @@
     try{ localStorage.removeItem(PENDING_CONFIRM_KEY); }catch(e){}
   }
   function askDidItSave(ids, filename, countHint){
-    var count = countHint || ids.length;
-    var ok = window.confirm(
-      "You handed " + count + " action(s) (" + (filename || "a file") + ") to another " +
-      "app to save.\n\nDid that finish saving successfully (e.g. did it show up in the " +
-      "OneDrive folder)?\n\nTap Cancel if it failed or you're not sure -- these will " +
-      "stay marked \"not sent\" so you can try again."
-    );
-    if(ok){
-      state.actions.forEach(function(a){ if(ids.indexOf(a.id) !== -1) a.sent = true; });
-      saveState();
-      updatePendingCount();
-      renderLog();
-      showToast("Marked as sent");
-    } else {
-      showToast("Kept as not sent -- try again anytime");
-    }
+    var count = countHint || (ids ? ids.length : 0);
+    document.getElementById("confirm-sent-label").textContent = count + " action(s) handed off";
+    document.getElementById("confirm-sent-sub").textContent =
+      (filename || "a file") + " -- did it finish saving in the app you chose " +
+      "(e.g. show up in the OneDrive folder)?";
+    document.getElementById("modal-confirm-sent").hidden = false;
+    document.getElementById("modal-confirm-sent").dataset.ids = JSON.stringify(ids || []);
   }
+  document.getElementById("btn-confirm-sent-yes").addEventListener("click", function(){
+    var ids = JSON.parse(document.getElementById("modal-confirm-sent").dataset.ids || "[]");
+    state.actions.forEach(function(a){ if(ids.indexOf(a.id) !== -1) a.sent = true; });
+    saveState();
+    updatePendingCount();
+    renderLog();
+    clearPendingConfirm();
+    document.getElementById("modal-confirm-sent").hidden = true;
+    showToast("Marked as sent");
+  });
+  document.getElementById("btn-confirm-sent-no").addEventListener("click", function(){
+    clearPendingConfirm();
+    document.getElementById("modal-confirm-sent").hidden = true;
+    showToast("Kept as not sent -- try again anytime");
+  });
   function resumePendingConfirmIfAny(){
     var raw;
     try{ raw = localStorage.getItem(PENDING_CONFIRM_KEY); }catch(e){ raw = null; }
     if(!raw) return;
-    clearPendingConfirm();
     var pending;
     try{ pending = JSON.parse(raw); }catch(e){ pending = null; }
-    if(!pending || !pending.ids || !pending.ids.length) return;
+    if(!pending || !pending.ids || !pending.ids.length){ clearPendingConfirm(); return; }
     askDidItSave(pending.ids, pending.filename, pending.ids.length);
   }
 
@@ -949,7 +990,6 @@
       navigator.share({ files:[file], title:"Farm actions", text: rows.length + " action(s) for the mushroom farm sheet" })
         .then(function(){
           if(markSent){
-            clearPendingConfirm();
             askDidItSave(ids, filename, rows.length);
           } else {
             afterExport(rows, markSent, "Shared " + filename);
@@ -1019,6 +1059,14 @@
     );
     if(next === null) return; // cancelled
     next = next.trim();
+
+    if(next && (/^https?:\/\/(1drv\.ms|onedrive\.live\.com)\//i.test(next) || /\.sharepoint\.com\//i.test(next))){
+      window.alert("OneDrive/SharePoint share links don't work here (Microsoft blocks the " +
+        "anonymous method this app used to rely on) -- ignoring that and using the " +
+        "automatic default instead.");
+      next = "";
+    }
+
     setDataUrl(next);
     assetInfoCache = null;
     assetInfoFetchedAt = 0;
