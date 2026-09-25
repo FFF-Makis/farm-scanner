@@ -2,7 +2,7 @@
 // Caches the app shell so it opens instantly and works with a weak/no
 // signal at the farm. jsQR is cached the first time it loads over a
 // real connection, then reused offline from then on.
-var CACHE_NAME = "farm-scanner-v8"; // bump this on every deploy to force old caches out
+var CACHE_NAME = "farm-scanner-v9"; // bump this on every deploy to force old caches out
 var APP_SHELL = [
   "./",
   "./index.html",

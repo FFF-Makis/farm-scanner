@@ -290,7 +290,7 @@
   // stale cached copy (GitHub Pages CDN, service worker, or the
   // browser's own cache) is obvious at a glance instead of silently
   // looking like a bug.
-  var APP_BUILD = "b9-2026-09-25";
+  var APP_BUILD = "b10-2026-09-25";
 
   // ---------------------------------------------------------------
   // Live asset info (optional): the workbook can export a small JSON
@@ -491,6 +491,36 @@
       });
   }
 
+  // Handing a file to the OS share sheet backgrounds this tab, and Android
+  // can silently kill the camera track while backgrounded to free up the
+  // hardware for whatever app you switched to -- the JS state all looks
+  // fine afterwards, but no new video frames ever arrive again, so scanning
+  // just quietly stops working until the whole page is reloaded. Whenever
+  // the tab becomes visible again, check the actual track state and
+  // reacquire the camera if it's not still live, instead of leaving that
+  // for a manual reload to fix.
+  function ensureCameraAlive(){
+    var track = mainStream && mainStream.getVideoTracks && mainStream.getVideoTracks()[0];
+    if(track && track.readyState === "live") return;
+    navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:"environment" } }, audio:false })
+      .then(function(stream){
+        if(mainStream){
+          mainStream.getTracks().forEach(function(t){ try{ t.stop(); }catch(e){} });
+        }
+        mainStream = stream;
+        videoMain.srcObject = stream;
+        videoDest.srcObject = stream;
+        document.getElementById("cam-error").hidden = true;
+      })
+      .catch(function(err){
+        document.getElementById("cam-error").hidden = false;
+        console.log("[FarmScanner] camera re-acquire error", err && err.name, err && err.message);
+      });
+  }
+  document.addEventListener("visibilitychange", function(){
+    if(document.visibilityState === "visible") ensureCameraAlive();
+  });
+
   function runScanLoop(){
     if(scanLoopHandle) cancelAnimationFrame(scanLoopHandle);
     function tick(){
@@ -556,7 +586,12 @@
     var extraEl = document.getElementById("found-extra");
     extraEl.hidden = true;
     extraEl.textContent = "";
-    if(parsed.type !== "unknown" && getDataUrl()){
+    if(parsed.type !== "unknown"){
+      // fetchAssetInfo() always has somewhere to look now (the site's own
+      // asset-info.json by default, even with nothing configured in
+      // Settings) -- this used to require a Settings override to even try,
+      // which is why live info never showed up under the new GitHub-backed
+      // default: this gate was never updated when that default was added.
       var forRaw = raw; // guard against a slower fetch resolving after a newer scan opened
       fetchAssetInfo().then(function(data){
         if(modal.hidden || modal.dataset.pending !== JSON.stringify(parsed)) return;
