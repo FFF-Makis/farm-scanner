@@ -1,6 +1,6 @@
 {
-"generatedAt":"2026-09-25T12:10:03",
-"racks":{"RACK-01":{"room":"Packaging Area","unitsOnRack":1},
+"generatedAt":"2026-09-25T12:33:35",
+"racks":{"RACK-01":{"room":"Incubation Room","unitsOnRack":1},
 "RACK-02":{"room":"Incubation Room","unitsOnRack":11},
 "RACK-03":{"room":"Clean Room","unitsOnRack":9},
 "RACK-04":{"room":"","unitsOnRack":0},
@@ -36,5 +36,5 @@
 "LM-HERI-18092026-00002|10":{"status":"Incubating","rack":"RACK-02","room":"Incubation Room","remaining":"3700"},
 "LM-HERI-21092025-00001|1":{"status":"Active","rack":"RACK-02","room":"Incubation Room","remaining":"150"},
 "LM-HERI-21092025-00001|2":{"status":"Active","rack":"RACK-02","room":"Incubation Room","remaining":"300"},
-"LM-HERI-21092025-00001|4":{"status":"Active","rack":"RACK-01","room":"Packaging Area","remaining":"300"}}
+"LM-HERI-21092025-00001|4":{"status":"Active","rack":"RACK-01","room":"Incubation Room","remaining":"300"}}
 }
