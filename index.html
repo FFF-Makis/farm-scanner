@@ -271,7 +271,7 @@
   // stale cached copy (GitHub Pages CDN, service worker, or the
   // browser's own cache) is obvious at a glance instead of silently
   // looking like a bug.
-  var APP_BUILD = "b7-2026-09-24";
+  var APP_BUILD = "b8-2026-09-25";
 
   // ---------------------------------------------------------------
   // Live asset info (optional): the workbook can export a small JSON
@@ -876,14 +876,61 @@
     return v;
   }
 
+  // Handing a file to navigator.share() backgrounds this tab while the user
+  // picks a destination in the OS share sheet (e.g. browsing OneDrive
+  // folders). On Android that hand-off can take long enough that Chrome
+  // discards/reloads the tab in the background to save memory -- when that
+  // happens, ANY in-flight JS (including a .then() waiting to ask "did it
+  // save?") is simply gone; a plain in-memory callback can never survive
+  // that. Persisting the pending confirmation to localStorage *before*
+  // calling share() means it survives a reload: resumePendingConfirmIfAny()
+  // (called on every app start) picks it back up and asks then instead.
+  var PENDING_CONFIRM_KEY = "farmScanner.pendingConfirm";
+  function savePendingConfirm(ids, filename){
+    try{ localStorage.setItem(PENDING_CONFIRM_KEY, JSON.stringify({ ids:ids, filename:filename })); }catch(e){}
+  }
+  function clearPendingConfirm(){
+    try{ localStorage.removeItem(PENDING_CONFIRM_KEY); }catch(e){}
+  }
+  function askDidItSave(ids, filename, countHint){
+    var count = countHint || ids.length;
+    var ok = window.confirm(
+      "You handed " + count + " action(s) (" + (filename || "a file") + ") to another " +
+      "app to save.\n\nDid that finish saving successfully (e.g. did it show up in the " +
+      "OneDrive folder)?\n\nTap Cancel if it failed or you're not sure -- these will " +
+      "stay marked \"not sent\" so you can try again."
+    );
+    if(ok){
+      state.actions.forEach(function(a){ if(ids.indexOf(a.id) !== -1) a.sent = true; });
+      saveState();
+      updatePendingCount();
+      renderLog();
+      showToast("Marked as sent");
+    } else {
+      showToast("Kept as not sent -- try again anytime");
+    }
+  }
+  function resumePendingConfirmIfAny(){
+    var raw;
+    try{ raw = localStorage.getItem(PENDING_CONFIRM_KEY); }catch(e){ raw = null; }
+    if(!raw) return;
+    clearPendingConfirm();
+    var pending;
+    try{ pending = JSON.parse(raw); }catch(e){ pending = null; }
+    if(!pending || !pending.ids || !pending.ids.length) return;
+    askDidItSave(pending.ids, pending.filename, pending.ids.length);
+  }
+
   function doExport(rows, markSent){
     if(rows.length === 0){ showToast("Nothing to send"); return; }
     var csv = buildCsv(rows);
     var filename = "farm-actions-" + new Date().toISOString().replace(/[:.]/g,"-") + ".csv";
     var blob = new Blob([csv], { type:"text/csv" });
     var file = new File([blob], filename, { type:"text/csv" });
+    var ids = rows.map(function(r){ return r.id; });
 
     function fallbackDownload(){
+      clearPendingConfirm();
       var url = URL.createObjectURL(blob);
       var a = document.createElement("a");
       a.href = url; a.download = filename;
@@ -893,25 +940,23 @@
     }
 
     if(navigator.canShare && navigator.canShare({ files:[file] })){
+      // navigator.share() only confirms the file was handed off to whatever
+      // app you picked (e.g. OneDrive) -- it does NOT confirm that app
+      // actually finished saving it, so don't mark sent until confirmed.
+      // Save this BEFORE calling share(), in case the tab gets reloaded
+      // while you're off in the share sheet (see the big comment above).
+      if(markSent) savePendingConfirm(ids, filename);
       navigator.share({ files:[file], title:"Farm actions", text: rows.length + " action(s) for the mushroom farm sheet" })
         .then(function(){
-          // navigator.share() only confirms the file was handed off to whatever
-          // app you picked (e.g. OneDrive) -- it does NOT confirm that app
-          // actually finished saving it. OneDrive in particular can silently
-          // fail (permissions, etc.) after this point, so don't mark sent
-          // until the user confirms it really landed.
           if(markSent){
-            var ok = window.confirm(
-              "Handed the file to the app you chose.\n\n" +
-              "Did it actually finish saving (e.g. did OneDrive show it in the folder)?\n\n" +
-              "Tap Cancel if it failed or you're not sure -- these will stay marked " +
-              "\"not sent\" so you can try again."
-            );
-            if(!ok){ showToast("Kept as not sent -- try again anytime"); return; }
+            clearPendingConfirm();
+            askDidItSave(ids, filename, rows.length);
+          } else {
+            afterExport(rows, markSent, "Shared " + filename);
           }
-          afterExport(rows, markSent, "Shared " + filename);
         })
         .catch(function(err){
+          clearPendingConfirm();
           if(err && err.name === "AbortError"){ showToast("Cancelled -- nothing marked as sent"); return; }
           fallbackDownload();
         });
@@ -999,6 +1044,7 @@
   document.getElementById("build-tag").textContent = APP_BUILD;
   renderMemoryStrip();
   updatePendingCount();
+  resumePendingConfirmIfAny();
   startCamera();
 
   if("serviceWorker" in navigator){
