@@ -149,6 +149,7 @@
   <div class="topbar">
     <div class="brand"><span class="dot"></span> Farm Scanner <span id="build-tag" style="font-weight:400;color:var(--muted);font-size:11px;"></span></div>
     <div class="pillrow">
+      <button class="pill" id="btn-restart-camera" title="Restart camera (use this if scanning ever freezes)">↻</button>
       <button class="pill" id="btn-settings" title="Settings">⚙</button>
       <button class="pill" id="btn-open-log" title="View log">📋 <span id="pending-count">0</span> to send</button>
     </div>
@@ -290,7 +291,7 @@
   // stale cached copy (GitHub Pages CDN, service worker, or the
   // browser's own cache) is obvious at a glance instead of silently
   // looking like a bug.
-  var APP_BUILD = "b10-2026-09-25";
+  var APP_BUILD = "b11-2026-09-25";
 
   // ---------------------------------------------------------------
   // Live asset info (optional): the workbook can export a small JSON
@@ -475,33 +476,9 @@
   var destExpectType = null;   // "rack" | "room"
   var destCallback = null;
 
-  function startCamera(){
-    document.getElementById("cam-error").hidden = true;
-    navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:"environment" } }, audio:false })
-      .then(function(stream){
-        mainStream = stream;
-        videoMain.srcObject = stream;
-        videoDest.srcObject = stream;
-        scanMode = "main";
-        runScanLoop();
-      })
-      .catch(function(err){
-        document.getElementById("cam-error").hidden = false;
-        console.log("[FarmScanner] camera error", err && err.name, err && err.message);
-      });
-  }
+  var lastCameraRefreshAt = 0;
 
-  // Handing a file to the OS share sheet backgrounds this tab, and Android
-  // can silently kill the camera track while backgrounded to free up the
-  // hardware for whatever app you switched to -- the JS state all looks
-  // fine afterwards, but no new video frames ever arrive again, so scanning
-  // just quietly stops working until the whole page is reloaded. Whenever
-  // the tab becomes visible again, check the actual track state and
-  // reacquire the camera if it's not still live, instead of leaving that
-  // for a manual reload to fix.
-  function ensureCameraAlive(){
-    var track = mainStream && mainStream.getVideoTracks && mainStream.getVideoTracks()[0];
-    if(track && track.readyState === "live") return;
+  function acquireCamera(onDone){
     navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:"environment" } }, audio:false })
       .then(function(stream){
         if(mainStream){
@@ -511,14 +488,52 @@
         videoMain.srcObject = stream;
         videoDest.srcObject = stream;
         document.getElementById("cam-error").hidden = true;
+        if(onDone) onDone();
       })
       .catch(function(err){
         document.getElementById("cam-error").hidden = false;
-        console.log("[FarmScanner] camera re-acquire error", err && err.name, err && err.message);
+        console.log("[FarmScanner] camera error", err && err.name, err && err.message);
       });
+  }
+
+  function startCamera(){
+    document.getElementById("cam-error").hidden = true;
+    lastCameraRefreshAt = Date.now();
+    acquireCamera(function(){
+      scanMode = "main";
+      runScanLoop();
+    });
+  }
+
+  // Handing a file to the OS share sheet backgrounds this tab, and Android
+  // can silently kill the camera while backgrounded to free up the hardware
+  // for whatever app you switched to -- the JS state all looks fine
+  // afterwards, but no new video frames ever arrive again, so scanning just
+  // quietly stops working until the whole page is reloaded. A dead track's
+  // reported readyState isn't reliable enough across devices to detect this
+  // by itself, so instead: unconditionally grab a fresh camera stream
+  // whenever the tab could plausibly have just come back from being
+  // backgrounded -- covers visibilitychange, window focus, and pageshow
+  // (different Android/Chrome versions fire different subsets of these
+  // during a share-sheet round trip), with a short de-dupe window so they
+  // don't all fire the request back-to-back.
+  function ensureCameraAlive(){
+    if(Date.now() - lastCameraRefreshAt < 1500) return;
+    lastCameraRefreshAt = Date.now();
+    acquireCamera();
   }
   document.addEventListener("visibilitychange", function(){
     if(document.visibilityState === "visible") ensureCameraAlive();
+  });
+  window.addEventListener("focus", ensureCameraAlive);
+  window.addEventListener("pageshow", function(){ ensureCameraAlive(); });
+
+  // Manual escape hatch (the ↻ button in the topbar) in case some device/
+  // browser combination doesn't fire any of the events above the way this
+  // was tested against -- always available, on any screen, no de-dupe.
+  document.getElementById("btn-restart-camera").addEventListener("click", function(){
+    lastCameraRefreshAt = Date.now();
+    acquireCamera(function(){ showToast("Camera restarted"); });
   });
 
   function runScanLoop(){
