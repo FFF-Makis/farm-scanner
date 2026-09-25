@@ -291,7 +291,7 @@
   // stale cached copy (GitHub Pages CDN, service worker, or the
   // browser's own cache) is obvious at a glance instead of silently
   // looking like a bug.
-  var APP_BUILD = "b11-2026-09-25";
+  var APP_BUILD = "b12-2026-09-25";
 
   // ---------------------------------------------------------------
   // Live asset info (optional): the workbook can export a small JSON
@@ -338,9 +338,23 @@
     if(assetInfoCache && (Date.now() - assetInfoFetchedAt) < 60000){
       return Promise.resolve(assetInfoCache);
     }
+    // GitHub Pages fronts every file with its own CDN (Fastly), which
+    // caches responses for a while independently of anything this app's
+    // own fetch() call asks for -- "cache: no-store" only stops the
+    // PHONE'S browser from reusing an old copy, it can't reach past that
+    // CDN and force IT to skip its cache too. A changing query string
+    // makes every request look like a brand-new URL to that CDN (and to
+    // any other cache in between), so there's nothing for it to have a
+    // stale copy OF. Only do this for the same-origin default -- a
+    // custom override URL (e.g. someone's own server) may not expect or
+    // tolerate an extra query string.
+    var fetchUrl = url;
+    if(url === DEFAULT_ASSET_URL){
+      fetchUrl = url + (url.indexOf("?") === -1 ? "?" : "&") + "v=" + Date.now();
+    }
     var controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
     var timer = controller ? setTimeout(function(){ controller.abort(); }, 5000) : null;
-    return fetch(url, { cache:"no-store", signal: controller ? controller.signal : undefined })
+    return fetch(fetchUrl, { cache:"no-store", signal: controller ? controller.signal : undefined })
       .then(function(res){
         if(!res.ok){ throw new Error("Server replied with an error (HTTP " + res.status + ")"); }
         return res.text();
@@ -391,6 +405,20 @@
       if(info.remaining) lines.push("Remaining: " + info.remaining);
     }
     return lines.join(" · ");
+  }
+
+  // Turns the workbook's "yyyy-mm-ddThh:nn:ss" export timestamp into
+  // something readable, so a stale/unexpected asset-info.json is
+  // obvious on the spot -- right on the scan prompt -- instead of only
+  // discoverable via Settings > (test). If this ever doesn't match what
+  // you expect (e.g. it says a time from before you last ran the
+  // workbook macro), that's the JSON itself being old/stale -- a
+  // caching problem, not the workbook's export logic, since every
+  // export rebuilds the whole file fresh from the current sheets.
+  function formatGeneratedAt(iso){
+    if(!iso) return "";
+    var m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(iso);
+    return m ? (m[1] + " " + m[2]) : iso;
   }
 
   // ---------------------------------------------------------------
@@ -610,10 +638,21 @@
       var forRaw = raw; // guard against a slower fetch resolving after a newer scan opened
       fetchAssetInfo().then(function(data){
         if(modal.hidden || modal.dataset.pending !== JSON.stringify(parsed)) return;
+        if(!data) return; // fetch failed -- stay quiet, don't claim anything about this code
         var info = lookupAssetInfo(data, parsed);
+        var stamp = data.generatedAt ? (" (as of " + formatGeneratedAt(data.generatedAt) + ")") : "";
         var text = formatAssetInfo(parsed, info);
         if(text){
-          extraEl.textContent = text;
+          extraEl.textContent = text + stamp;
+          extraEl.hidden = false;
+        } else if(parsed.type === "unit"){
+          // The JSON loaded fine and is this fresh, but this exact
+          // Batch+Unit isn't in it -- almost always means it's been
+          // retired/removed from the workbook since this sticker was
+          // printed, not a bug. Showing this (with the timestamp) beats
+          // silently showing nothing, which reads as "didn't check".
+          extraEl.textContent = "No current record for this unit in the workbook" + stamp +
+            " -- it may have been retired or removed.";
           extraEl.hidden = false;
         }
       });
