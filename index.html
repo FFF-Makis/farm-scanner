@@ -291,7 +291,7 @@
   // stale cached copy (GitHub Pages CDN, service worker, or the
   // browser's own cache) is obvious at a glance instead of silently
   // looking like a bug.
-  var APP_BUILD = "b12-2026-09-25";
+  var APP_BUILD = "b13-2026-10-06";
 
   // ---------------------------------------------------------------
   // Live asset info (optional): the workbook can export a small JSON
@@ -507,12 +507,20 @@
   var lastCameraRefreshAt = 0;
 
   function acquireCamera(onDone){
-    navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:"environment" } }, audio:false })
+    navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:"environment" }, width:{ ideal:1280 }, height:{ ideal:720 } }, audio:false })
       .then(function(stream){
         if(mainStream){
           mainStream.getTracks().forEach(function(t){ try{ t.stop(); }catch(e){} });
         }
         mainStream = stream;
+        // Ask for continuous autofocus where the phone supports it (ignored elsewhere)
+        try{
+          var vt = stream.getVideoTracks()[0];
+          var caps = vt && vt.getCapabilities ? vt.getCapabilities() : {};
+          if(caps.focusMode && caps.focusMode.indexOf("continuous") !== -1){
+            vt.applyConstraints({ advanced:[{ focusMode:"continuous" }] }).catch(function(){});
+          }
+        }catch(e){}
         videoMain.srcObject = stream;
         videoDest.srcObject = stream;
         document.getElementById("cam-error").hidden = true;
@@ -564,6 +572,59 @@
     acquireCamera(function(){ showToast("Camera restarted"); });
   });
 
+  // ---------------------------------------------------------------
+  // QR decoding: Android/Chrome's built-in BarcodeDetector when available
+  // (fast, no download needed); jsQR (loaded from the CDN, cached by the
+  // service worker) as the fallback. If neither is available a warning is
+  // shown instead of silently never detecting anything.
+  // ---------------------------------------------------------------
+  var nativeDetector = null;
+  var detectBusy = false;
+  try{
+    if("BarcodeDetector" in window){
+      window.BarcodeDetector.getSupportedFormats().then(function(formats){
+        if(formats && formats.indexOf("qr_code") !== -1){
+          nativeDetector = new window.BarcodeDetector({ formats:["qr_code"] });
+          updateScannerHint();
+        }
+      }).catch(function(){});
+    }
+  }catch(e){ nativeDetector = null; }
+
+  var lastHintState = "";
+  function updateScannerHint(){
+    var ok = !!nativeDetector || (typeof jsQR === "function");
+    var stateNow = ok ? "ok" : "missing";
+    if(stateNow === lastHintState) return;
+    lastHintState = stateNow;
+    var msg = ok ? "Point at a QR code"
+                 : "Scanner not loaded -- connect to Wi-Fi or mobile data, then close and reopen the app";
+    ["cam-hint","dest-hint"].forEach(function(id){
+      var el = document.getElementById(id);
+      if(!el) return;
+      if(!el.dataset.defaultText) el.dataset.defaultText = el.textContent;
+      el.textContent = ok ? el.dataset.defaultText : msg;
+    });
+  }
+  setTimeout(updateScannerHint, 4000);
+
+  function processDecoded(raw){
+    if(raw === ""){
+      // Nothing decoded this frame -- whatever was in view has moved out,
+      // so it's fair game to trigger again if it comes back.
+      suppressedCode = "";
+      return;
+    }
+    if(raw === suppressedCode){
+      // Same physical code still sitting in the frame -- already surfaced once.
+      return;
+    }
+    if(scanMode === "off") return;
+    if(document.getElementById("modal-found").hidden === false) return;
+    if(document.getElementById("modal-confirm-sent").hidden === false) return;
+    handleDetected(raw);
+  }
+
   function runScanLoop(){
     if(scanLoopHandle) cancelAnimationFrame(scanLoopHandle);
     function tick(){
@@ -577,27 +638,29 @@
 
       var w = v.videoWidth, h = v.videoHeight;
       if(!w || !h) return;
+
+      if(nativeDetector){
+        if(detectBusy) return;
+        detectBusy = true;
+        nativeDetector.detect(v).then(function(codes){
+          detectBusy = false;
+          processDecoded((codes && codes.length && codes[0].rawValue) ? codes[0].rawValue : "");
+        }).catch(function(){
+          detectBusy = false;
+          nativeDetector = null; // fall back to jsQR from the next frame
+          updateScannerHint();
+        });
+        return;
+      }
+
       scanCanvas.width = w; scanCanvas.height = h;
       scanCtx.drawImage(v, 0, 0, w, h);
       var imageData;
       try{ imageData = scanCtx.getImageData(0, 0, w, h); }catch(e){ return; }
 
-      var result = (typeof jsQR === "function") ? jsQR(imageData.data, w, h, { inversionAttempts:"dontInvert" }) : null;
-      var raw = (result && result.data) ? result.data : "";
-
-      if(raw === ""){
-        // Nothing decoded this frame -- whatever was in view has moved out,
-        // so it's fair game to trigger again if it comes back.
-        suppressedCode = "";
-        return;
-      }
-      if(raw === suppressedCode){
-        // Same physical code still sitting in the frame (phone held steady
-        // on a sticker) -- we've already surfaced it once; don't re-pop
-        // the prompt every frame until it actually moves out of view.
-        return;
-      }
-      handleDetected(raw);
+      if(typeof jsQR !== "function"){ updateScannerHint(); return; }
+      var result = jsQR(imageData.data, w, h, { inversionAttempts:"dontInvert" });
+      processDecoded((result && result.data) ? result.data : "");
     }
     tick();
   }

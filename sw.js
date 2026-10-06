@@ -2,7 +2,7 @@
 // Caches the app shell so it opens instantly and works with a weak/no
 // signal at the farm. jsQR is cached the first time it loads over a
 // real connection, then reused offline from then on.
-var CACHE_NAME = "farm-scanner-v11"; // bump this on every deploy to force old caches out
+var CACHE_NAME = "farm-scanner-v12"; // bump this on every deploy to force old caches out
 var APP_SHELL = [
   "./",
   "./index.html",
@@ -16,6 +16,8 @@ self.addEventListener("install", function(event){
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then(function(cache){
+      // Pre-cache jsQR too, so a version bump never leaves the fallback scanner missing offline
+      cache.add(JSQR_URL).catch(function(){ /* fine -- fetched later on a real connection */ });
       return cache.addAll(APP_SHELL).catch(function(){ /* tolerate individual failures */ });
     })
   );
