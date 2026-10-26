@@ -1,7 +1,7 @@
 {
-"generatedAt":"2026-10-26T18:00:25",
+"generatedAt":"2026-10-26T19:24:24",
 "soakSettings":{"hours":24,"mixOffsets":[4,8,14]},
-"soaks":[],
+"soaks":[{"id":"SOAK-20261026-1924","start":"2026-10-26T19:24","bags":7,"ryeKg":15.05,"status":"Soaking","events":[{"name":"Mix 1 of 3","at":"2026-10-26T23:24"},{"name":"Mix 2 of 3","at":"2026-10-27T03:24"},{"name":"Mix 3 of 3","at":"2026-10-27T09:24"},{"name":"Drain & rinse","at":"2026-10-27T19:24"}]}],
 "days":[
 {"date":"2026-10-26","items":[{"col":"B","label":"Autoclave runs","value":2},{"col":"S","label":"Autoclave & inoculate LM substrate (# bags)","value":16},{"col":"T","label":"Autoclave & inoculate BP substrate (# bags)","value":8},{"col":"X","label":"Autoclave LC jars - inoculate BP (# jars)","value":2},{"col":"Y","label":"Order 25Kg rye grains","value":25},{"col":"AA","label":"Order 480Kg woodpellets","value":480},{"col":"AC","label":"Order Master LC LM (ml syringe culture)","value":10},{"col":"AD","label":"Order Master LC BP (ml syringe culture)","value":10},{"col":"AH","label":"Order 50ml syringes + 18G needles (# of each)","value":25}]},
 {"date":"2026-10-27","items":[{"col":"B","label":"Autoclave runs","value":2},{"col":"N","label":"Start rye soak (# bags) -- ~24h before the spawn autoclave; mix 3x (log it with StartRyeSoak for timed Telegram reminders)","value":7},{"col":"S","label":"Autoclave & inoculate LM substrate (# bags)","value":24}]},
