@@ -1,5 +1,5 @@
 {
-"generatedAt":"2026-11-02T12:28:53",
+"generatedAt":"2026-11-02T13:21:01",
 "racks":{"RACK-01":{"room":"Storage","unitsOnRack":0},
 "RACK-02":{"room":"Incubation Room","unitsOnRack":22},
 "RACK-03":{"room":"Clean Room","unitsOnRack":0},
@@ -29,7 +29,7 @@
 "SC-MP04-28102026-00005|3":{"status":"Incubating","rack":"RACK-02","room":"Incubation Room"},
 "SC-MP04-28102026-00005|4":{"status":"Incubating","rack":"RACK-02","room":"Incubation Room"},
 "SC-MP04-28102026-00005|5":{"status":"Incubating","rack":"RACK-02","room":"Incubation Room"},
-"SC-MP04-28102026-00005|6":{"status":"Incubating","rack":"RACK-02","room":""},
+"SC-MP04-28102026-00005|6":{"status":"Incubating","rack":"RACK-02","room":"Incubation Room"},
 "LM-LPRD-28102026-00008|1":{"status":"Incubating","rack":"RACK-02","room":"Incubation Room","remaining":"3700"},
 "LM-LPRD-28102026-00008|2":{"status":"Incubating","rack":"RACK-02","room":"Incubation Room","remaining":"3700"},
 "LM-LPRD-28102026-00008|3":{"status":"Incubating","rack":"RACK-02","room":"Incubation Room","remaining":"3700"},
