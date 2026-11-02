@@ -1,5 +1,5 @@
 {
-"generatedAt":"2026-11-02T13:51:44",
+"generatedAt":"2026-11-02T14:32:55",
 "racks":{"RACK-01":{"room":"Storage","unitsOnRack":0},
 "RACK-02":{"room":"Incubation Room","unitsOnRack":22},
 "RACK-03":{"room":"Clean Room","unitsOnRack":0},
@@ -16,6 +16,8 @@
 "RACK-14":{"room":"","unitsOnRack":0},
 "RACK-15":{"room":"","unitsOnRack":0},
 "RACK-16":{"room":"","unitsOnRack":0},
+"RACK-17":{"room":"","unitsOnRack":0},
+"RACK-18":{"room":"","unitsOnRack":0},
 "FRIDGE":{"room":"Fridge","unitsOnRack":7},
 "Legend: yellow cells are yours to edit (Rack ID, Room, Capacity). Green cells are computed live.":{"room":"","unitsOnRack":0}},
 "rooms":{"RM-CLEAN":{"name":"Clean Room","rackCount":0},
