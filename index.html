@@ -99,7 +99,7 @@
   .code-kind{font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-bottom:4px;}
   .code-label{font-size:19px; font-weight:700; margin-bottom:2px; word-break:break-word;}
   .code-sub{font-size:13px; color:var(--muted); margin-bottom:14px;}
-  .code-extra{font-size:13px; color:var(--text); background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:8px 10px; margin:-6px 0 14px; line-height:1.5;}
+  .code-extra{font-size:13px; color:var(--text); background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:8px 10px; margin:-6px 0 14px; line-height:1.5; white-space:pre-line; text-align:left;}
   .code-extra[hidden]{display:none!important;}
 
   /* Toast */
@@ -400,9 +400,23 @@
     } else if(parsed.type === "room"){
       if(info.rackCount != null) lines.push(info.rackCount + " rack(s) in this room");
     } else if(parsed.type === "unit"){
+      // Stage + generation first, so LC / spawn / substrate is obvious at a glance
+      var head = info.stage || "";
+      if(info.gen) head += (head ? " · " : "") + "G" + info.gen;
+      if(head) lines.push(head);
+      var who = [info.species, info.strain].filter(Boolean).join(" · ");
+      if(who) lines.push(who);
+      if(info.date) lines.push((info.stage && /culture/i.test(info.stage) ? "Made: " : "Inoculated: ") + info.date);
       if(info.status) lines.push("Status: " + info.status);
       if(info.rack) lines.push("Rack: " + info.rack + (info.room ? " (" + info.room + ")" : ""));
       if(info.remaining) lines.push("Remaining: " + info.remaining);
+      if(info.lineage && info.lineage.length){
+        lines.push("Lineage (newest first):");
+        info.lineage.forEach(function(step, i){ lines.push("↳ " + step); });
+      } else if(info.stage){
+        lines.push("Lineage: not recorded");
+      }
+      return lines.join("\n");
     }
     return lines.join(" · ");
   }
@@ -706,7 +720,7 @@
         var stamp = data.generatedAt ? (" (as of " + formatGeneratedAt(data.generatedAt) + ")") : "";
         var text = formatAssetInfo(parsed, info);
         if(text){
-          extraEl.textContent = text + stamp;
+          extraEl.textContent = text + (text.indexOf("\n") > -1 ? "\n" + stamp.trim() : stamp);
           extraEl.hidden = false;
         } else if(parsed.type === "unit"){
           // The JSON loaded fine and is this fresh, but this exact
