@@ -1,5 +1,5 @@
 {
-"generatedAt":"2026-11-03T12:34:02",
+"generatedAt":"2026-11-03T12:38:59",
 "racks":{"RACK-01":{"room":"Incubation Room","unitsOnRack":3},
 "RACK-02":{"room":"Incubation Room","unitsOnRack":0},
 "RACK-03":{"room":"Incubation Room","unitsOnRack":6},
@@ -8,7 +8,7 @@
 "RACK-06":{"room":"Incubation Room","unitsOnRack":6},
 "RACK-07":{"room":"Incubation Room","unitsOnRack":0},
 "RACK-08":{"room":"","unitsOnRack":0},
-"RACK-09":{"room":"","unitsOnRack":0},
+"RACK-09":{"room":"Clean Room","unitsOnRack":0},
 "RACK-10":{"room":"","unitsOnRack":0},
 "RACK-11":{"room":"","unitsOnRack":0},
 "RACK-12":{"room":"","unitsOnRack":0},
