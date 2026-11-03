@@ -291,7 +291,7 @@
   // stale cached copy (GitHub Pages CDN, service worker, or the
   // browser's own cache) is obvious at a glance instead of silently
   // looking like a bug.
-  var APP_BUILD = "b13-2026-10-06";
+  var APP_BUILD = "2026-11-03 pi-send";
 
   // ---------------------------------------------------------------
   // Live asset info (optional): the workbook can export a small JSON
@@ -1181,9 +1181,50 @@
     showToast(msg);
   }
 
+  // ---------------------------------------------------------------
+  // Send straight to the farm Pi over Tailscale (no CSV, no OneDrive).
+  // The workbook macro ImportPhoneActions then downloads them from the Pi.
+  // Set the Pi address once in Settings (gear icon).
+  // ---------------------------------------------------------------
+  var PI_URL_KEY = "fff_pi_url";
+  function getPiUrl(){ try{ return (localStorage.getItem(PI_URL_KEY) || "").trim().replace(/\/+$/, ""); }catch(e){ return ""; } }
+  function setPiUrl(u){ try{ if(u) localStorage.setItem(PI_URL_KEY, u); else localStorage.removeItem(PI_URL_KEY); }catch(e){} updateSendLabel(); }
+  function updateSendLabel(){
+    var b = document.getElementById("btn-send-log");
+    if(b) b.textContent = getPiUrl() ? "Send unsent to the Pi" : "Send unsent to laptop (CSV)";
+  }
+  function sendToPi(rows){
+    if(rows.length === 0){ showToast("Nothing to send"); return; }
+    var payload = rows.map(function(a){
+      return { id:a.id, timestamp:a.timestamp, action:a.action, codes:a.codes, destination:a.destination,
+               value:a.value, reason:a.reason, notes:a.notes };
+    });
+    var ctl = ("AbortController" in window) ? new AbortController() : null;
+    var timer = setTimeout(function(){ if(ctl) ctl.abort(); }, 12000);
+    showToast("Sending " + rows.length + " to the Pi...");
+    fetch(getPiUrl() + "/actions", { method:"POST", headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ rows: payload }), signal: ctl ? ctl.signal : undefined, cache:"no-store" })
+      .then(function(res){ return res.json().then(function(j){ return { status: res.status, j: j }; }); })
+      .then(function(r){
+        clearTimeout(timer);
+        if(r.status === 200 && r.j && r.j.ok){
+          afterExport(rows, true, "Sent to the Pi \u2713 (" + r.j.stored + " new" + (r.j.duplicates ? ", " + r.j.duplicates + " already there" : "") + ")");
+        } else {
+          throw new Error((r.j && r.j.error) || ("HTTP " + r.status));
+        }
+      })
+      .catch(function(err){
+        clearTimeout(timer);
+        var why = (err && err.name === "AbortError") ? "no answer within 12 s" : (err && err.message) || "unknown error";
+        if(window.confirm("Couldn't reach the Pi (" + why + ").\nIs Tailscale switched on on this phone?\n\nNothing was marked as sent. Send as a CSV file instead?")){
+          doExport(rows, true);
+        }
+      });
+  }
+
   document.getElementById("btn-send-log").addEventListener("click", function(){
     var unsent = state.actions.filter(function(a){ return !a.sent; });
-    doExport(unsent, true);
+    if(getPiUrl()) sendToPi(unsent); else doExport(unsent, true);
   });
   document.getElementById("btn-export-all").addEventListener("click", function(){
     doExport(state.actions.slice(), false);
@@ -1215,6 +1256,23 @@
   // Settings (data URL for live asset info)
   // ---------------------------------------------------------------
   document.getElementById("btn-settings").addEventListener("click", function(){
+    var piNow = getPiUrl();
+    var pi = window.prompt(
+      "Pi address for sending actions (from 'tailscale serve status' on the Pi), e.g.\n" +
+      "https://fff-pi.tailXXXX.ts.net:8443\n\nLeave blank to send CSV files instead:", piNow);
+    if(pi !== null){
+      pi = pi.trim().replace(/\/+$/, "");
+      if(pi && !/^https:\/\//i.test(pi)) pi = "https://" + pi;
+      setPiUrl(pi);
+      if(pi){
+        fetch(pi + "/ping", { cache:"no-store" }).then(function(r){ return r.json(); })
+          .then(function(j){ window.alert("Pi reached \u2713 (" + j.count + " action(s) stored there so far)."); })
+          .catch(function(e){ window.alert("Saved, but the Pi didn't answer: " + (e && e.message) + "\nCheck Tailscale is on and the address is right."); });
+      } else {
+        showToast("Pi address cleared -- using CSV files");
+      }
+    }
+    if(!window.confirm("Also change where live scan details come from? (Normally: Cancel)")) return;
     var current = getDataUrl();
     var next = window.prompt(
       "Live scan details load automatically from this site's own asset-info.json " +
@@ -1257,6 +1315,7 @@
   // ---------------------------------------------------------------
   document.getElementById("build-tag").textContent = APP_BUILD;
   renderMemoryStrip();
+  updateSendLabel();
   updatePendingCount();
   resumePendingConfirmIfAny();
   startCamera();
