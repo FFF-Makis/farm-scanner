@@ -1,7 +1,9 @@
 {
-"generatedAt":"2026-11-20T15:23:21",
+"generatedAt":"2026-11-20T15:34:12",
 "soakSettings":{"hours":24,"mixOffsets":[4,8,14]},
 "soaks":[],
+"actionLog":[{"id":"2026-11-20|Y","status":"Pending","done":0,"reason":"","newDate":""},{"id":"2026-11-20|AA","status":"Pending","done":0,"reason":"","newDate":""},{"id":"2026-11-20|AC","status":"Pending","done":0,"reason":"","newDate":""},{"id":"2026-11-20|AD","status":"Pending","done":0,"reason":"","newDate":""},{"id":"2026-11-20|AH","status":"Pending","done":0,"reason":"","newDate":""}],
+"reminders":[],
 "days":[
 {"date":"2026-11-20","items":[{"col":"Y","label":"Order 25Kg rye grains","value":25},{"col":"AA","label":"Order 480Kg woodpellets","value":480},{"col":"AC","label":"Order Master LC LM (ml syringe culture)","value":10},{"col":"AD","label":"Order Master LC BP (ml syringe culture)","value":10},{"col":"AH","label":"Order 50ml syringes + 18G needles (# of each)","value":25}]},
 {"date":"2026-11-21","items":[]},
